@@ -13,6 +13,18 @@ async function getApp() {
 }
 
 export default async function handler(req: any, res: any) {
-  const app = await getApp();
-  app.server.emit("request", req, res);
+  try {
+    const app = await getApp();
+    app.server.emit("request", req, res);
+  } catch (error) {
+    console.error("Failed to bootstrap API handler", error);
+    res.statusCode = 500;
+    res.setHeader("content-type", "application/json");
+    res.end(
+      JSON.stringify({
+        error: "Internal server error",
+        message: "Server bootstrap failed",
+      }),
+    );
+  }
 }
