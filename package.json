@@ -1,5 +1,6 @@
 {
   "name": "treinamento-pro",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "concurrently \"pnpm --filter api dev\" \"pnpm --filter web dev\"",
