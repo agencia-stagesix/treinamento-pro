@@ -23,6 +23,7 @@ export async function buildApp() {
   await app.register(cors, {
     origin: [
       "http://localhost:3000",
+      "https://treinamento-pro-api.vercel.app",
       process.env.FRONTEND_URL ?? "http://localhost:3000",
     ],
     credentials: true,
