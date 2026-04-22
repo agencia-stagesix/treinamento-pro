@@ -2,7 +2,9 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let cachedAdminClient: SupabaseClient | null = null;
 
-function requiredEnv(name: "SUPABASE_URL" | "SUPABASE_SERVICE_KEY" | "SUPABASE_ANON_KEY") {
+function requiredEnv(
+  name: "SUPABASE_URL" | "SUPABASE_SERVICE_KEY" | "SUPABASE_ANON_KEY",
+) {
   const value = process.env[name];
   if (!value) {
     throw new Error(`${name} must be set`);
@@ -38,8 +40,12 @@ export const supabaseAdmin = new Proxy({} as SupabaseClient, {
 
 // Creates a scoped client with user's JWT — respects RLS
 export function supabaseForUser(jwt: string) {
-  return createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_ANON_KEY"), {
-    global: { headers: { Authorization: `Bearer ${jwt}` } },
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  return createClient(
+    requiredEnv("SUPABASE_URL"),
+    requiredEnv("SUPABASE_ANON_KEY"),
+    {
+      global: { headers: { Authorization: `Bearer ${jwt}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    },
+  );
 }
