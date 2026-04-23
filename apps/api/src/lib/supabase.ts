@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { GoTrueClient } from "@supabase/supabase-js";
 
 let cachedAdminClient: SupabaseClient | null = null;
 
@@ -37,6 +38,11 @@ export const supabaseAdmin = new Proxy({} as SupabaseClient, {
     return typeof value === "function" ? value.bind(client) : value;
   },
 }) as SupabaseClient;
+
+// Typed accessor for admin auth operations — GoTrueClient exposes admin, signInWithPassword, etc.
+// SupabaseAuthClient extends GoTrueClient but the bundled d.ts loses those methods in some TS versions.
+export const supabaseAdminAuth: GoTrueClient =
+  supabaseAdmin.auth as unknown as GoTrueClient;
 
 // Creates a scoped client with user's JWT — respects RLS
 export function supabaseForUser(jwt: string) {

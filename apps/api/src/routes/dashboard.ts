@@ -151,7 +151,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       });
 
       // Sort: critical first, then by attention needed
-      result.sort((a, b) => {
+      result.sort((a: any, b: any) => {
         const aPriority = a.alertas_ativos.some(
           (x: any) => x.severidade === "critical",
         )

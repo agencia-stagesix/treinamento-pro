@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { supabaseAdmin } from "../lib/supabase.js";
+import { supabaseAdmin, supabaseAdminAuth } from "../lib/supabase.js";
 
 const registerSchema = z.object({
   nome: z.string().min(2).max(255),
@@ -32,18 +32,16 @@ export async function authRoutes(app: FastifyInstance) {
     const { nome, email, senha, tipo_usuario, codigo_convite } = body.data;
 
     const { data: authData, error: authError } =
-      await supabaseAdmin.auth.admin.createUser({
+      await supabaseAdminAuth.admin.createUser({
         email,
         password: senha,
         email_confirm: true,
       });
     if (authError || !authData.user) {
-      return reply
-        .code(400)
-        .send({
-          error: "AuthError",
-          message: authError?.message ?? "Erro ao criar usuário",
-        });
+      return reply.code(400).send({
+        error: "AuthError",
+        message: authError?.message ?? "Erro ao criar usuário",
+      });
     }
 
     // Resolve treinador_id se tiver código de convite
@@ -78,7 +76,7 @@ export async function authRoutes(app: FastifyInstance) {
     });
 
     if (perfilError) {
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+      await supabaseAdminAuth.admin.deleteUser(authData.user.id);
       return reply
         .code(500)
         .send({ error: "DBError", message: "Erro ao criar perfil" });
@@ -86,17 +84,15 @@ export async function authRoutes(app: FastifyInstance) {
 
     // Sign in to get tokens
     const { data: signIn, error: signInError } =
-      await supabaseAdmin.auth.signInWithPassword({
+      await supabaseAdminAuth.signInWithPassword({
         email,
         password: senha,
       });
     if (signInError || !signIn.session) {
-      return reply
-        .code(500)
-        .send({
-          error: "SignInError",
-          message: "Erro ao autenticar após registro",
-        });
+      return reply.code(500).send({
+        error: "SignInError",
+        message: "Erro ao autenticar após registro",
+      });
     }
 
     const { data: perfil } = await supabaseAdmin
@@ -123,7 +119,7 @@ export async function authRoutes(app: FastifyInstance) {
         .send({ error: "Validation", message: body.error.message });
     }
 
-    const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+    const { data, error } = await supabaseAdminAuth.signInWithPassword({
       email: body.data.email,
       password: body.data.senha,
     });
@@ -158,7 +154,7 @@ export async function authRoutes(app: FastifyInstance) {
         .send({ error: "Validation", message: "refresh_token obrigatório" });
     }
 
-    const { data, error } = await supabaseAdmin.auth.refreshSession({
+    const { data, error } = await supabaseAdminAuth.refreshSession({
       refresh_token,
     });
     if (error || !data.session) {
@@ -177,7 +173,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ── POST /auth/logout ────────────────────────────────────
   app.post("/logout", { preHandler: app.authenticate }, async (req, reply) => {
-    await supabaseAdmin.auth.admin.signOut(req.jwt);
+    await supabaseAdminAuth.admin.signOut(req.jwt);
     return reply.send({ data: { message: "Sessão encerrada" } });
   });
 
@@ -199,18 +195,19 @@ export async function authRoutes(app: FastifyInstance) {
         .select("email")
         .eq("id", req.user.id)
         .single();
-      const { error: verifyError } =
-        await supabaseAdmin.auth.signInWithPassword({
+      const { error: verifyError } = await supabaseAdminAuth.signInWithPassword(
+        {
           email: user!.email,
           password: body.data.senha_atual,
-        });
+        },
+      );
       if (verifyError) {
         return reply
           .code(401)
           .send({ error: "AuthError", message: "Senha atual incorreta" });
       }
 
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(
+      const { error } = await supabaseAdminAuth.admin.updateUserById(
         req.user.id,
         {
           password: body.data.nova_senha,

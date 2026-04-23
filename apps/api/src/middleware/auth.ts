@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { supabaseAdmin } from "../lib/supabase.js";
+import { supabaseAdmin, supabaseAdminAuth } from "../lib/supabase.js";
 
 export interface AuthUser {
   id: string;
@@ -32,7 +32,7 @@ export async function authMiddleware(
   const token = authHeader.slice(7);
 
   // Verify JWT with Supabase
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  const { data, error } = await supabaseAdminAuth.getUser(token);
   if (error || !data.user) {
     return reply
       .code(401)
