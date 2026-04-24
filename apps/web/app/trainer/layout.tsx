@@ -2,7 +2,13 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { LayoutDashboard, Bell, LogOut, Settings } from "lucide-react";
+import {
+  LayoutDashboard,
+  Bell,
+  LogOut,
+  Settings,
+  Dumbbell,
+} from "lucide-react";
 import { api, clearTokens, getStoredUser } from "@/lib/api";
 
 export default function TrainerLayout({
@@ -40,6 +46,7 @@ export default function TrainerLayout({
 
   const navItems = [
     { href: "/trainer/dashboard", label: "Esquadrão", icon: LayoutDashboard },
+    { href: "/trainer/exercicios", label: "Exercícios", icon: Dumbbell },
     {
       href: "/trainer/alertas",
       label: "Alertas",

@@ -70,12 +70,13 @@ pnpm dev          # inicia api (porta 3001) + web (porta 3000)
 - **Protocolos** — criação de templates de séries, vinculação a alunos e acompanhamento de resultados
 - **Biblioteca de exercícios** — CRUD com upload de vídeo/imagem e importação via CSV
 - **Alertas** — notificações de vencimento de protocolos (D-3 e D0)
-- **Settings** — convites e gerenciamento da biblioteca de exercícios
+- **Exercícios** — página dedicada para gestão da biblioteca de exercícios e séries de treino, com modais de cadastro, edição e exclusão
+- **Settings** — convites e edição do perfil do treinador
 
 ### Aluno (agente)
 
 - **Hoje** — resumo diário de treino, hidratação e refeições
-- **Treinamento** — execução guiada de séries com cronômetro de descanso, registro de carga/reps/esforço e avanço automático
+- **Treinamento** — séries vinculadas pelo treinador com execução guiada: cronômetro de descanso regressivo, bipe de áudio, registro de carga/reps/esforço e avanço automático
 - **Evolução** — gráficos de biometria e readiness
 - **Perfil** — dados pessoais e metas
 
