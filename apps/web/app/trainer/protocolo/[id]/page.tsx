@@ -46,6 +46,7 @@ interface Exercicio {
   grupo_muscular: string;
 }
 interface SerieEx {
+  exercicio_id?: string;
   nome: string;
   series: number;
   repeticoes: string;
@@ -88,6 +89,14 @@ export default function ProtocoloEditorPage() {
   });
   const [activeSection, setActiveSection] = useState<string | null>("treino");
   const [activeDayIdx, setActiveDayIdx] = useState<number | null>(null);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [vinculos, setVinculos] = useState<any[]>([]);
+  const [templateNome, setTemplateNome] = useState("");
+  const [templateSelecionado, setTemplateSelecionado] = useState("");
+  const [validade, setValidade] = useState("");
+  const [overrides, setOverrides] = useState<
+    Record<string, { repeticoes?: string; descanso?: string }>
+  >({});
 
   // Exercise search
   const [exSearch, setExSearch] = useState("");
@@ -99,9 +108,16 @@ export default function ProtocoloEditorPage() {
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([api.perfil.meusAlunos(), api.protocolos.get(id)])
-      .then(([, proto]) => {
+    Promise.all([
+      api.perfil.meusAlunos(),
+      api.protocolos.get(id),
+      api.protocolos.treinamento.templates.list(),
+      api.protocolos.treinamento.vinculos.listByAluno(id),
+    ])
+      .then(([, proto, tpls, vincs]) => {
         const p = (proto as any).data;
+        setTemplates((tpls as any).data ?? []);
+        setVinculos((vincs as any).data ?? []);
         if (p) {
           setDiasTreino(p.planilha_treino ?? []);
           setPlanoAlimentar(p.plano_alimentar ?? []);
@@ -115,6 +131,78 @@ export default function ProtocoloEditorPage() {
       })
       .finally(() => setLoading(false));
   }, [id]);
+
+  function flattenTemplateExercicios() {
+    let ordem = 1;
+    const items: any[] = [];
+    for (const dia of diasTreino) {
+      for (const ex of dia.exercicios) {
+        if (!ex.exercicio_id) continue;
+        items.push({
+          exercicio_id: ex.exercicio_id,
+          ordem: ordem++,
+          repeticoes: Number(ex.repeticoes.split("-")[0] || "10"),
+          descanso_seg: ex.descanso_seg || 60,
+          observacoes: ex.notas || undefined,
+        });
+      }
+    }
+    return items;
+  }
+
+  async function criarTemplate() {
+    const exercicios = flattenTemplateExercicios();
+    if (!templateNome || exercicios.length === 0) return;
+    const r = (await api.protocolos.treinamento.templates.create({
+      nome: templateNome,
+      descricao: "Template gerado a partir do editor",
+      exercicios,
+    })) as any;
+    setTemplates((prev) => [r.data, ...prev]);
+    setTemplateNome("");
+  }
+
+  async function atualizarTemplateSelecionado() {
+    if (!templateSelecionado) return;
+    const exercicios = flattenTemplateExercicios();
+    await api.protocolos.treinamento.templates.update(templateSelecionado, {
+      exercicios,
+    });
+    const t = (await api.protocolos.treinamento.templates.list()) as any;
+    setTemplates(t.data ?? []);
+  }
+
+  async function excluirTemplate(idTemplate: string) {
+    await api.protocolos.treinamento.templates.remove(idTemplate);
+    setTemplates((prev) => prev.filter((t) => t.id !== idTemplate));
+  }
+
+  async function vincularTemplate() {
+    if (!templateSelecionado || !validade || !id) return;
+    const template = templates.find((t) => t.id === templateSelecionado);
+    const ovs = ((template?.exercicios ?? []) as any[])
+      .map((te) => {
+        const ov = overrides[te.id] ?? {};
+        return {
+          serie_template_exercicio_id: te.id,
+          repeticoes_override: ov.repeticoes
+            ? Number(ov.repeticoes)
+            : undefined,
+          descanso_seg_override: ov.descanso ? Number(ov.descanso) : undefined,
+        };
+      })
+      .filter((o) => o.repeticoes_override || o.descanso_seg_override);
+
+    await api.protocolos.treinamento.vinculos.create(id, {
+      serie_template_id: templateSelecionado,
+      validade_em: validade,
+      overrides: ovs,
+    });
+    const vincs = (await api.protocolos.treinamento.vinculos.listByAluno(
+      id,
+    )) as any;
+    setVinculos(vincs.data ?? []);
+  }
 
   function searchExercicios(q: string) {
     clearTimeout(searchTimeout.current);
@@ -175,6 +263,7 @@ export default function ProtocoloEditorPage() {
               exercicios: [
                 ...d.exercicios,
                 {
+                  exercicio_id: ex.id,
                   nome: ex.nome,
                   series: 3,
                   repeticoes: "10",
@@ -280,6 +369,141 @@ export default function ProtocoloEditorPage() {
         <button onClick={save} disabled={saving} className="btn-primary px-5">
           {saving ? "Salvando..." : "Salvar"}
         </button>
+      </div>
+
+      <div className="card p-4 flex flex-col gap-3">
+        <h3 className="text-sm font-semibold text-text">
+          Treinamento (Templates e Vínculos)
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <input
+            className="input"
+            placeholder="Nome do template"
+            value={templateNome}
+            onChange={(e) => setTemplateNome(e.target.value)}
+          />
+          <button className="btn-secondary" onClick={criarTemplate}>
+            Criar template do editor
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={atualizarTemplateSelecionado}
+          >
+            Atualizar template selecionado
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
+          <select
+            className="input"
+            value={templateSelecionado}
+            onChange={(e) => {
+              setTemplateSelecionado(e.target.value);
+              setOverrides({});
+            }}
+          >
+            <option value="">Selecione template</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nome}
+              </option>
+            ))}
+          </select>
+          <input
+            type="date"
+            className="input"
+            value={validade}
+            onChange={(e) => setValidade(e.target.value)}
+          />
+          <button className="btn-primary" onClick={vincularTemplate}>
+            Vincular ao aluno
+          </button>
+        </div>
+
+        {templateSelecionado && (
+          <div className="border border-border rounded-xl p-3 flex flex-col gap-2">
+            <p className="text-xs text-dim">
+              Overrides por exercício (opcional):
+            </p>
+            {(
+              templates.find((t) => t.id === templateSelecionado)?.exercicios ??
+              []
+            ).map((te: any) => (
+              <div
+                key={te.id}
+                className="grid grid-cols-1 md:grid-cols-3 gap-2"
+              >
+                <p className="text-xs text-text self-center">
+                  {te.exercicio?.nome ?? `Exercício ${te.ordem}`}
+                </p>
+                <input
+                  className="input text-xs"
+                  placeholder={`Reps (padrão ${te.repeticoes})`}
+                  value={overrides[te.id]?.repeticoes ?? ""}
+                  onChange={(e) =>
+                    setOverrides((p) => ({
+                      ...p,
+                      [te.id]: { ...p[te.id], repeticoes: e.target.value },
+                    }))
+                  }
+                />
+                <input
+                  className="input text-xs"
+                  placeholder={`Descanso seg (padrão ${te.descanso_seg})`}
+                  value={overrides[te.id]?.descanso ?? ""}
+                  onChange={(e) =>
+                    setOverrides((p) => ({
+                      ...p,
+                      [te.id]: { ...p[te.id], descanso: e.target.value },
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="border border-border rounded-xl p-3">
+            <p className="text-xs font-semibold text-text mb-2">Templates</p>
+            <div className="space-y-1 max-h-40 overflow-auto">
+              {templates.map((t) => (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between text-xs bg-border/30 rounded px-2 py-1.5"
+                >
+                  <span>{t.nome}</span>
+                  <button
+                    className="text-red hover:opacity-80"
+                    onClick={() => excluirTemplate(t.id)}
+                  >
+                    remover
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="border border-border rounded-xl p-3">
+            <p className="text-xs font-semibold text-text mb-2">
+              Vínculos do aluno
+            </p>
+            <div className="space-y-1 max-h-40 overflow-auto">
+              {vinculos.map((v) => (
+                <div
+                  key={v.id}
+                  className="text-xs bg-border/30 rounded px-2 py-1.5"
+                >
+                  <p className="text-text">{v.template?.nome ?? "Série"}</p>
+                  <p className="text-dim">
+                    Status: {v.status} · validade:{" "}
+                    {new Date(v.validade_em).toLocaleDateString("pt-BR")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Metas */}

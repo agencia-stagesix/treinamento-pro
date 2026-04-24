@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS alertas_treinador (
   treinador_id    UUID NOT NULL REFERENCES perfis(id),
   agente_id       UUID NOT NULL REFERENCES perfis(id),
   tipo_alerta     VARCHAR(100) NOT NULL
-    CHECK (tipo_alerta IN ('estagnacao', 'risco_cardiologico', 'ausencia', 'dieta')),
+    CHECK (tipo_alerta IN ('estagnacao', 'risco_cardiologico', 'ausencia', 'dieta', 'vencimento_treinamento_d3', 'vencimento_treinamento_d0')),
   severidade      VARCHAR(20) DEFAULT 'info'
     CHECK (severidade IN ('info', 'warning', 'critical')),
   descricao       TEXT,
@@ -193,12 +193,95 @@ CREATE TABLE IF NOT EXISTS protocolos (
 CREATE TABLE IF NOT EXISTS exercicios (
   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   nome            VARCHAR(255) NOT NULL,
+  nome_normalizado VARCHAR(255) GENERATED ALWAYS AS (LOWER(nome)) STORED,
   grupo_muscular  VARCHAR(100) NOT NULL,
   equipamento     VARCHAR(100),
   tags            TEXT[] DEFAULT '{}',
   descricao       TEXT,
   video_url       TEXT,
+  imagem_url      TEXT,
+  updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ─── 13.1 SÉRIES TEMPLATE (Treinamento) ───────────────────
+CREATE TABLE IF NOT EXISTS series_templates (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  treinador_id    UUID NOT NULL REFERENCES perfis(id) ON DELETE CASCADE,
+  nome            VARCHAR(255) NOT NULL,
+  descricao       TEXT,
+  ativo           BOOLEAN DEFAULT true,
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS series_template_exercicios (
+  id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  serie_template_id   UUID NOT NULL REFERENCES series_templates(id) ON DELETE CASCADE,
+  exercicio_id        UUID NOT NULL REFERENCES exercicios(id) ON DELETE RESTRICT,
+  ordem               INTEGER NOT NULL CHECK (ordem > 0),
+  repeticoes          INTEGER NOT NULL CHECK (repeticoes > 0),
+  descanso_seg        INTEGER NOT NULL DEFAULT 60 CHECK (descanso_seg >= 0),
+  observacoes         TEXT,
+  created_at          TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (serie_template_id, ordem)
+);
+
+-- ─── 13.2 VÍNCULO SÉRIE-ALUNO ─────────────────────────────
+CREATE TABLE IF NOT EXISTS aluno_series_vinculos (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  agente_id       UUID NOT NULL REFERENCES perfis(id) ON DELETE CASCADE,
+  treinador_id    UUID NOT NULL REFERENCES perfis(id) ON DELETE CASCADE,
+  serie_template_id UUID NOT NULL REFERENCES series_templates(id) ON DELETE RESTRICT,
+  inicio_em       DATE NOT NULL DEFAULT CURRENT_DATE,
+  validade_em     DATE NOT NULL,
+  status          VARCHAR(30) NOT NULL DEFAULT 'ativo'
+    CHECK (status IN ('ativo', 'pausado', 'concluido', 'expirado')),
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CHECK (validade_em >= inicio_em)
+);
+
+CREATE TABLE IF NOT EXISTS aluno_series_vinculo_exercicios (
+  id                        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  aluno_serie_vinculo_id    UUID NOT NULL REFERENCES aluno_series_vinculos(id) ON DELETE CASCADE,
+  serie_template_exercicio_id UUID NOT NULL REFERENCES series_template_exercicios(id) ON DELETE CASCADE,
+  repeticoes_override       INTEGER CHECK (repeticoes_override > 0),
+  descanso_seg_override     INTEGER CHECK (descanso_seg_override >= 0),
+  created_at                TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (aluno_serie_vinculo_id, serie_template_exercicio_id)
+);
+
+-- ─── 13.3 EXECUÇÃO GUIADA (Aluno) ─────────────────────────
+CREATE TABLE IF NOT EXISTS treino_execucoes (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  aluno_serie_vinculo_id UUID NOT NULL REFERENCES aluno_series_vinculos(id) ON DELETE CASCADE,
+  agente_id       UUID NOT NULL REFERENCES perfis(id) ON DELETE CASCADE,
+  treinador_id    UUID NOT NULL REFERENCES perfis(id) ON DELETE CASCADE,
+  iniciado_em     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  finalizado_em   TIMESTAMP WITH TIME ZONE,
+  status          VARCHAR(30) NOT NULL DEFAULT 'em_andamento'
+    CHECK (status IN ('em_andamento', 'concluida', 'abandonada')),
+  created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS treino_execucao_itens (
+  id                            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  treino_execucao_id            UUID NOT NULL REFERENCES treino_execucoes(id) ON DELETE CASCADE,
+  serie_template_exercicio_id   UUID NOT NULL REFERENCES series_template_exercicios(id) ON DELETE RESTRICT,
+  exercicio_id                  UUID NOT NULL REFERENCES exercicios(id) ON DELETE RESTRICT,
+  ordem                         INTEGER NOT NULL CHECK (ordem > 0),
+  repeticoes_planejadas         INTEGER NOT NULL CHECK (repeticoes_planejadas > 0),
+  repeticoes_realizadas         INTEGER,
+  descanso_planejado_seg        INTEGER NOT NULL DEFAULT 60 CHECK (descanso_planejado_seg >= 0),
+  descanso_real_seg             INTEGER,
+  carga_kg                      DECIMAL(6,2),
+  esforco_percebido             INTEGER CHECK (esforco_percebido BETWEEN 6 AND 10),
+  pulado                        BOOLEAN DEFAULT false,
+  concluido_em                  TIMESTAMP WITH TIME ZONE,
+  observacoes                   TEXT,
+  created_at                    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (treino_execucao_id, ordem)
 );
 
 -- ─── 14. CONVITES DE TREINADOR ─────────────────────────────
@@ -244,6 +327,27 @@ CREATE INDEX IF NOT EXISTS idx_exercicios_grupo
 
 CREATE INDEX IF NOT EXISTS idx_exercicios_tags
   ON exercicios USING GIN (tags);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_exercicios_nome_unique
+  ON exercicios (nome_normalizado);
+
+CREATE INDEX IF NOT EXISTS idx_series_templates_treinador
+  ON series_templates (treinador_id, ativo, nome);
+
+CREATE INDEX IF NOT EXISTS idx_series_template_exercicios_template
+  ON series_template_exercicios (serie_template_id, ordem);
+
+CREATE INDEX IF NOT EXISTS idx_aluno_series_vinculos_agente
+  ON aluno_series_vinculos (agente_id, status, validade_em);
+
+CREATE INDEX IF NOT EXISTS idx_aluno_series_vinculos_treinador
+  ON aluno_series_vinculos (treinador_id, status, validade_em);
+
+CREATE INDEX IF NOT EXISTS idx_treino_execucoes_agente
+  ON treino_execucoes (agente_id, iniciado_em DESC);
+
+CREATE INDEX IF NOT EXISTS idx_treino_execucao_itens_execucao
+  ON treino_execucao_itens (treino_execucao_id, ordem);
 
 -- ============================================================
 -- TRIGGER: ALERTA DE ESTAGNAÇÃO
@@ -397,4 +501,19 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_protocolos_updated_at ON protocolos;
 CREATE TRIGGER trg_protocolos_updated_at
   BEFORE UPDATE ON protocolos
+  FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_exercicios_updated_at ON exercicios;
+CREATE TRIGGER trg_exercicios_updated_at
+  BEFORE UPDATE ON exercicios
+  FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_series_templates_updated_at ON series_templates;
+CREATE TRIGGER trg_series_templates_updated_at
+  BEFORE UPDATE ON series_templates
+  FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_aluno_series_vinculos_updated_at ON aluno_series_vinculos;
+CREATE TRIGGER trg_aluno_series_vinculos_updated_at
+  BEFORE UPDATE ON aluno_series_vinculos
   FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();

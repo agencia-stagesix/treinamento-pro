@@ -4,13 +4,13 @@ import { api } from "@/lib/api";
 import { CheckCheck } from "lucide-react";
 
 const SEV_LABEL: Record<string, string> = {
-  critico: "🔴 Crítico",
-  aviso: "🟡 Aviso",
+  critical: "🔴 Crítico",
+  warning: "🟡 Aviso",
   info: "⚪ Info",
 };
 const SEV_CLASS: Record<string, string> = {
-  critico: "badge-critical",
-  aviso: "badge-warning",
+  critical: "badge-critical",
+  warning: "badge-warning",
   info: "badge-info",
 };
 
@@ -86,7 +86,7 @@ export default function AlertasPage() {
                       {SEV_LABEL[a.severidade] ?? a.severidade}
                     </span>
                     <span className="text-xs text-dim">
-                      {a.tipo?.replace(/_/g, " ")}
+                      {a.tipo_alerta?.replace(/_/g, " ")}
                     </span>
                     <span className="text-xs text-dim ml-auto">
                       {new Date(a.created_at).toLocaleDateString("pt-BR", {
@@ -102,9 +102,9 @@ export default function AlertasPage() {
                       {a.agente.nome}
                     </p>
                   )}
-                  <p className="text-sm text-dim">{a.mensagem}</p>
+                  <p className="text-sm text-dim">{a.descricao}</p>
                 </div>
-                {!a.lido && (
+                {!a.lido && !String(a.id).startsWith("venc-") && (
                   <button
                     onClick={() => marcarLido(a.id)}
                     className="shrink-0 text-dim hover:text-green p-1"

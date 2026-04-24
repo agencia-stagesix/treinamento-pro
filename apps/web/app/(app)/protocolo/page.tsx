@@ -2,30 +2,123 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
-  Clock,
+  Play,
+  Pause,
+  SkipForward,
+  RotateCcw,
+  Timer,
   Dumbbell,
-  Pill,
-  Target,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 
 export default function ProtocoloPage() {
-  const [protocolo, setProtocolo] = useState<any>(null);
+  const [ativos, setAtivos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeDay, setActiveDay] = useState<number | null>(null);
+  const [execucao, setExecucao] = useState<any>(null);
+  const [indiceAtual, setIndiceAtual] = useState(0);
+  const [descanso, setDescanso] = useState<number | null>(null);
+  const [rodando, setRodando] = useState(false);
+  const [dadosSet, setDadosSet] = useState({
+    carga_kg: "",
+    esforco_percebido: "",
+    repeticoes_realizadas: "",
+  });
+  const [finalizando, setFinalizando] = useState(false);
 
   useEffect(() => {
-    api.protocolos
-      .meu()
+    api.protocolos.treinamento.aluno
+      .ativos()
       .then((r: any) => {
-        setProtocolo(r.data);
+        setAtivos(r.data ?? []);
       })
       .finally(() => setLoading(false));
   }, []);
 
-  const diasSemana = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  const todayDow = new Date().getDay();
+  useEffect(() => {
+    if (descanso === null || !rodando) return;
+    if (descanso <= 0) {
+      playBeep();
+      concluirAtual();
+      return;
+    }
+    const t = setTimeout(() => setDescanso((v) => (v ?? 1) - 1), 1000);
+    return () => clearTimeout(t);
+  }, [descanso, rodando]);
+
+  function playBeep() {
+    if (typeof window === "undefined") return;
+    const ctx = new (
+      window.AudioContext || (window as any).webkitAudioContext
+    )();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = 0.08;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  }
+
+  const itens = execucao?.itens ?? [];
+  const itemAtual = itens[indiceAtual];
+
+  async function iniciar(vinculoId: string) {
+    const r = (await api.protocolos.treinamento.aluno.iniciarExecucao(
+      vinculoId,
+    )) as any;
+    setExecucao(r.data);
+    setIndiceAtual(0);
+    setDescanso(null);
+    setRodando(false);
+  }
+
+  async function concluirAtual() {
+    if (!execucao || !itemAtual) return;
+    await api.protocolos.treinamento.aluno.atualizarItem(
+      execucao.execucao.id,
+      itemAtual.id,
+      {
+        repeticoes_realizadas: dadosSet.repeticoes_realizadas
+          ? Number(dadosSet.repeticoes_realizadas)
+          : undefined,
+        carga_kg: dadosSet.carga_kg ? Number(dadosSet.carga_kg) : undefined,
+        esforco_percebido: dadosSet.esforco_percebido
+          ? Number(dadosSet.esforco_percebido)
+          : undefined,
+        descanso_real_seg: itemAtual.descanso_planejado_seg,
+        concluido: true,
+      },
+    );
+
+    setDadosSet({
+      carga_kg: "",
+      esforco_percebido: "",
+      repeticoes_realizadas: "",
+    });
+
+    if (indiceAtual >= itens.length - 1) {
+      setFinalizando(true);
+      await api.protocolos.treinamento.aluno.finalizarExecucao(
+        execucao.execucao.id,
+      );
+      setFinalizando(false);
+      setRodando(false);
+      setDescanso(null);
+      return;
+    }
+
+    const nextIdx = indiceAtual + 1;
+    setIndiceAtual(nextIdx);
+    setDescanso(itens[nextIdx]?.descanso_planejado_seg ?? 0);
+    setRodando(true);
+  }
+
+  function iniciarDescanso() {
+    if (!itemAtual) return;
+    setDescanso(itemAtual.descanso_planejado_seg ?? 0);
+    setRodando(true);
+  }
 
   if (loading) {
     return (
@@ -35,15 +128,15 @@ export default function ProtocoloPage() {
     );
   }
 
-  if (!protocolo) {
+  if (!ativos || ativos.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <h2 className="text-xl font-bold text-text">Protocolo</h2>
+        <h2 className="text-xl font-bold text-text">Treinamento</h2>
         <div className="card p-8 text-center">
           <Dumbbell className="w-10 h-10 text-dim mx-auto mb-3" />
-          <p className="text-text font-medium">Protocolo não configurado</p>
+          <p className="text-text font-medium">Sem séries ativas</p>
           <p className="text-dim text-sm mt-1">
-            Seu treinador ainda não configurou seu protocolo.
+            Seu treinador ainda não vinculou séries de treinamento ativas.
             <br />
             Entre em contato para iniciar seu plano.
           </p>
@@ -54,189 +147,136 @@ export default function ProtocoloPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-text">Protocolo</h2>
-        <span className="text-xs text-dim bg-border px-2 py-1 rounded-lg">
-          v{protocolo.versao}
-        </span>
-      </div>
+      <h2 className="text-xl font-bold text-text">Treinamento</h2>
 
-      {/* Metas */}
-      {protocolo.metas && (
-        <div className="card p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Target className="w-4 h-4 text-cyan" />
-            <span className="text-sm font-semibold text-text">Metas</span>
-          </div>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            {protocolo.metas.peso_alvo && (
-              <div>
-                <p className="text-lg font-bold text-cyan">
-                  {protocolo.metas.peso_alvo} kg
-                </p>
-                <p className="text-xs text-dim">Peso alvo</p>
-              </div>
-            )}
-            {protocolo.metas.gordura_alvo && (
-              <div>
-                <p className="text-lg font-bold text-amber">
-                  {protocolo.metas.gordura_alvo}%
-                </p>
-                <p className="text-xs text-dim">Gordura alvo</p>
-              </div>
-            )}
-            {protocolo.metas.prazo && (
-              <div>
-                <p className="text-lg font-bold text-green">
-                  {protocolo.metas.prazo}
-                </p>
-                <p className="text-xs text-dim">Prazo</p>
-              </div>
-            )}
-          </div>
+      {!execucao && (
+        <div className="flex flex-col gap-3">
+          {ativos.map((v) => (
+            <div key={v.id} className="card p-4">
+              <p className="font-semibold text-text">
+                {v.template?.nome ?? "Série"}
+              </p>
+              <p className="text-xs text-dim mt-1">
+                Válida até {new Date(v.validade_em).toLocaleDateString("pt-BR")}
+              </p>
+              <button
+                onClick={() => iniciar(v.id)}
+                className="btn-primary w-full mt-3 flex items-center justify-center gap-2"
+              >
+                <Play className="w-4 h-4" /> Iniciar execução
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Planilha de treino */}
-      {protocolo.planilha_treino?.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="p-4 border-b border-border flex items-center gap-2">
-            <Dumbbell className="w-4 h-4 text-purple" />
-            <span className="text-sm font-semibold text-text">
-              Planilha de Treino
-            </span>
+      {execucao && itemAtual && (
+        <div className="card p-4 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-dim">
+              Exercício {indiceAtual + 1} de {itens.length}
+            </p>
+            <button
+              className="text-xs text-dim hover:text-text flex items-center gap-1"
+              onClick={() => {
+                setExecucao(null);
+                setRodando(false);
+                setDescanso(null);
+              }}
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reiniciar
+            </button>
           </div>
-          <div className="divide-y divide-border">
-            {protocolo.planilha_treino.map((dia: any) => {
-              const isToday = dia.dia_semana === todayDow;
-              const isOpen = activeDay === dia.dia_semana;
 
-              return (
-                <div key={dia.dia_semana}>
-                  <button
-                    className={`w-full flex items-center justify-between p-4 hover:bg-border/40 transition-colors text-left ${isToday ? "bg-cyan/5" : ""}`}
-                    onClick={() => setActiveDay(isOpen ? null : dia.dia_semana)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`text-xs font-bold w-8 h-8 rounded-lg flex items-center justify-center ${isToday ? "bg-cyan text-bg" : "bg-border text-dim"}`}
-                      >
-                        {diasSemana[dia.dia_semana]}
-                      </span>
-                      <div>
-                        <p
-                          className={`text-sm font-medium ${isToday ? "text-cyan" : "text-text"}`}
-                        >
-                          {dia.nome}
-                        </p>
-                        <p className="text-xs text-dim">
-                          {dia.exercicios?.length ?? 0} exercícios
-                        </p>
-                      </div>
-                    </div>
-                    {isOpen ? (
-                      <ChevronUp className="w-4 h-4 text-dim" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-dim" />
-                    )}
-                  </button>
-
-                  {isOpen && dia.exercicios?.length > 0 && (
-                    <div className="bg-bg/50 divide-y divide-border/50">
-                      {dia.exercicios.map((ex: any, i: number) => (
-                        <div key={i} className="p-4 pl-16">
-                          <p className="text-sm font-medium text-text">
-                            {ex.nome}
-                          </p>
-                          <p className="text-xs text-dim mt-0.5">
-                            {ex.series}×{ex.repeticoes}
-                            {ex.carga ? ` — ${ex.carga}` : ""}
-                            {ex.descanso_seg
-                              ? ` — ${ex.descanso_seg}s descanso`
-                              : ""}
-                          </p>
-                          {ex.notas && (
-                            <p className="text-xs text-dim2 mt-0.5 italic">
-                              {ex.notas}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div>
+            <p className="text-lg font-bold text-text">
+              {itemAtual.exercicio?.nome}
+            </p>
+            <p className="text-sm text-dim">
+              Planejado: {itemAtual.repeticoes_planejadas} reps • descanso{" "}
+              {itemAtual.descanso_planejado_seg}s
+            </p>
           </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <input
+              className="input text-sm"
+              placeholder="Reps"
+              value={dadosSet.repeticoes_realizadas}
+              onChange={(e) =>
+                setDadosSet((p) => ({
+                  ...p,
+                  repeticoes_realizadas: e.target.value,
+                }))
+              }
+            />
+            <input
+              className="input text-sm"
+              placeholder="Carga kg"
+              value={dadosSet.carga_kg}
+              onChange={(e) =>
+                setDadosSet((p) => ({ ...p, carga_kg: e.target.value }))
+              }
+            />
+            <input
+              className="input text-sm"
+              placeholder="Esforço 6-10"
+              value={dadosSet.esforco_percebido}
+              onChange={(e) =>
+                setDadosSet((p) => ({
+                  ...p,
+                  esforco_percebido: e.target.value,
+                }))
+              }
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-secondary flex-1 flex items-center justify-center gap-2"
+              onClick={() => setRodando((v) => !v)}
+              disabled={descanso === null}
+            >
+              {rodando ? (
+                <Pause className="w-4 h-4" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+              {rodando ? "Pausar" : "Retomar"}
+            </button>
+            <button
+              aria-label="Iniciar descanso"
+              className="btn-secondary"
+              onClick={iniciarDescanso}
+            >
+              <Timer className="w-4 h-4" />
+            </button>
+            <button
+              aria-label="Avançar exercício"
+              className="btn-primary"
+              onClick={concluirAtual}
+            >
+              <SkipForward className="w-4 h-4" />
+            </button>
+          </div>
+
+          {descanso !== null && (
+            <div className="rounded-xl bg-cyan/10 border border-cyan/20 p-4 text-center">
+              <p className="text-xs text-dim mb-1">Descanso</p>
+              <p className="text-3xl font-bold text-cyan tabular-nums">
+                {descanso}s
+              </p>
+              <p className="text-xs text-dim mt-1">
+                Ao zerar toca áudio e avança automaticamente.
+              </p>
+            </div>
+          )}
+
+          {finalizando && (
+            <p className="text-sm text-dim">Finalizando execução...</p>
+          )}
         </div>
       )}
-
-      {/* Plano alimentar */}
-      {protocolo.plano_alimentar?.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="p-4 border-b border-border flex items-center gap-2">
-            <Clock className="w-4 h-4 text-amber" />
-            <span className="text-sm font-semibold text-text">
-              Plano Alimentar
-            </span>
-          </div>
-          <div className="divide-y divide-border">
-            {protocolo.plano_alimentar.map((ref: any, i: number) => (
-              <div key={i} className="p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-text">
-                    {ref.tipo?.replace("-", " ")}
-                  </span>
-                  <span className="text-xs text-dim font-medium">
-                    {ref.horario}
-                  </span>
-                </div>
-                <p className="text-sm text-dim">{ref.descricao}</p>
-                {ref.calorias_alvo && (
-                  <p className="text-xs text-amber mt-1">
-                    ~{ref.calorias_alvo} kcal
-                    {ref.proteina_alvo
-                      ? ` · ${ref.proteina_alvo}g proteína`
-                      : ""}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Suplementação */}
-      {protocolo.suplementos?.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="p-4 border-b border-border flex items-center gap-2">
-            <Pill className="w-4 h-4 text-green" />
-            <span className="text-sm font-semibold text-text">
-              Suplementação
-            </span>
-          </div>
-          <div className="divide-y divide-border">
-            {protocolo.suplementos.map((sup: any, i: number) => (
-              <div key={i} className="p-4 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-green/10 flex items-center justify-center text-sm">
-                  💊
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-text">{sup.nome}</p>
-                  <p className="text-xs text-dim">
-                    {sup.dose} · {sup.horario_relativo}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <p className="text-xs text-dim text-center pb-2">
-        Atualizado em{" "}
-        {new Date(protocolo.updated_at).toLocaleDateString("pt-BR")}
-      </p>
     </div>
   );
 }

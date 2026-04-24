@@ -199,7 +199,47 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const { data, error } = await query;
     if (error)
       return reply.code(500).send({ error: "DBError", message: error.message });
-    return reply.send({ data });
+
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+    const d3 = new Date(today);
+    d3.setDate(today.getDate() + 3);
+    const d3Str = d3.toISOString().slice(0, 10);
+
+    const { data: vencimentos } = await supabaseAdmin
+      .from("aluno_series_vinculos")
+      .select(
+        "id, validade_em, agente:perfis!agente_id(id, nome, foto_url), template:series_templates(nome)",
+      )
+      .eq("treinador_id", req.user.id)
+      .eq("status", "ativo")
+      .in("validade_em", [todayStr, d3Str]);
+
+    const alertaVencimento = (vencimentos ?? []).map((v: any) => {
+      const dias =
+        Math.floor(
+          (new Date(v.validade_em).getTime() - new Date(todayStr).getTime()) /
+            86400000,
+        ) || 0;
+      return {
+        id: `venc-${v.id}`,
+        agente_id: v.agente?.id,
+        tipo_alerta:
+          dias === 0
+            ? "vencimento_treinamento_d0"
+            : "vencimento_treinamento_d3",
+        severidade: dias === 0 ? "critical" : "warning",
+        descricao:
+          dias === 0
+            ? `Treinamento vence hoje (${v.template?.nome ?? "série"})`
+            : `Treinamento vence em 3 dias (${v.template?.nome ?? "série"})`,
+        created_at: new Date().toISOString(),
+        lido: false,
+        agente: v.agente,
+      };
+    });
+
+    return reply.send({ data: [...(data ?? []), ...alertaVencimento] });
   });
 
   // ── PUT /dashboard/alertas/:id/lido ─────────────────────
@@ -237,40 +277,55 @@ export async function dashboardRoutes(app: FastifyInstance) {
         return reply.code(403).send({ error: "Forbidden" });
       }
 
-      const [perfil, biometria, treinos, readiness, protocolo, alertas] =
-        await Promise.all([
-          supabaseAdmin.from("perfis").select("*").eq("id", id).single(),
-          supabaseAdmin
-            .from("biometria")
-            .select("*")
-            .eq("agente_id", id)
-            .order("data_registro", { ascending: false })
-            .limit(90),
-          supabaseAdmin
-            .from("treinos_realizados")
-            .select("*")
-            .eq("agente_id", id)
-            .order("data_treino", { ascending: false })
-            .limit(30),
-          supabaseAdmin
-            .from("readiness_diario")
-            .select("*")
-            .eq("agente_id", id)
-            .order("data_registro", { ascending: false })
-            .limit(30),
-          supabaseAdmin
-            .from("protocolos")
-            .select("*")
-            .eq("agente_id", id)
-            .eq("ativo", true)
-            .maybeSingle(),
-          supabaseAdmin
-            .from("alertas_treinador")
-            .select("*")
-            .eq("agente_id", id)
-            .order("created_at", { ascending: false })
-            .limit(20),
-        ]);
+      const [
+        perfil,
+        biometria,
+        treinos,
+        readiness,
+        protocolo,
+        alertas,
+        treinoExecucoes,
+      ] = await Promise.all([
+        supabaseAdmin.from("perfis").select("*").eq("id", id).single(),
+        supabaseAdmin
+          .from("biometria")
+          .select("*")
+          .eq("agente_id", id)
+          .order("data_registro", { ascending: false })
+          .limit(90),
+        supabaseAdmin
+          .from("treinos_realizados")
+          .select("*")
+          .eq("agente_id", id)
+          .order("data_treino", { ascending: false })
+          .limit(30),
+        supabaseAdmin
+          .from("readiness_diario")
+          .select("*")
+          .eq("agente_id", id)
+          .order("data_registro", { ascending: false })
+          .limit(30),
+        supabaseAdmin
+          .from("protocolos")
+          .select("*")
+          .eq("agente_id", id)
+          .eq("ativo", true)
+          .maybeSingle(),
+        supabaseAdmin
+          .from("alertas_treinador")
+          .select("*")
+          .eq("agente_id", id)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        supabaseAdmin
+          .from("treino_execucoes")
+          .select(
+            "*, vinculo:aluno_series_vinculos(*), itens:treino_execucao_itens(*, exercicio:exercicios(*))",
+          )
+          .eq("agente_id", id)
+          .order("iniciado_em", { ascending: false })
+          .limit(20),
+      ]);
 
       return reply.send({
         data: {
@@ -280,6 +335,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
           readiness: readiness.data,
           protocolo: protocolo.data,
           alertas: alertas.data,
+          treino_execucoes: treinoExecucoes.data,
         },
       });
     },

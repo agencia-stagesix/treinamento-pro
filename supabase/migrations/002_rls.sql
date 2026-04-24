@@ -15,6 +15,12 @@ ALTER TABLE protocolos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE saude ENABLE ROW LEVEL SECURITY;
 ALTER TABLE convites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exercicios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE series_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE series_template_exercicios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aluno_series_vinculos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE aluno_series_vinculo_exercicios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE treino_execucoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE treino_execucao_itens ENABLE ROW LEVEL SECURITY;
 
 CREATE OR REPLACE FUNCTION auth_user_tipo() RETURNS TEXT AS $$ SELECT tipo_usuario FROM perfis WHERE id = auth.uid() $$ LANGUAGE sql SECURITY DEFINER STABLE;
 CREATE OR REPLACE FUNCTION auth_user_treinador_id() RETURNS UUID AS $$ SELECT treinador_id FROM perfis WHERE id = auth.uid() $$ LANGUAGE sql SECURITY DEFINER STABLE;
@@ -106,3 +112,97 @@ DROP POLICY IF EXISTS "exercicios_public_select" ON exercicios;
 CREATE POLICY "exercicios_public_select" ON exercicios FOR SELECT USING (true);
 DROP POLICY IF EXISTS "exercicios_admin_crud" ON exercicios;
 CREATE POLICY "exercicios_admin_crud" ON exercicios FOR ALL USING (auth_user_tipo() = 'admin');
+DROP POLICY IF EXISTS "exercicios_treinador_crud" ON exercicios;
+CREATE POLICY "exercicios_treinador_crud" ON exercicios FOR ALL USING (auth_user_tipo() IN ('treinador', 'admin'));
+
+-- SERIES_TEMPLATES
+DROP POLICY IF EXISTS "series_templates_treinador_crud" ON series_templates;
+CREATE POLICY "series_templates_treinador_crud" ON series_templates
+FOR ALL USING (treinador_id = auth.uid() OR auth_user_tipo() = 'admin')
+WITH CHECK (treinador_id = auth.uid() OR auth_user_tipo() = 'admin');
+
+-- SERIES_TEMPLATE_EXERCICIOS
+DROP POLICY IF EXISTS "series_template_exercicios_treinador_crud" ON series_template_exercicios;
+CREATE POLICY "series_template_exercicios_treinador_crud" ON series_template_exercicios
+FOR ALL USING (
+	serie_template_id IN (
+		SELECT id FROM series_templates
+		WHERE treinador_id = auth.uid() OR auth_user_tipo() = 'admin'
+	)
+)
+WITH CHECK (
+	serie_template_id IN (
+		SELECT id FROM series_templates
+		WHERE treinador_id = auth.uid() OR auth_user_tipo() = 'admin'
+	)
+);
+
+-- ALUNO_SERIES_VINCULOS
+DROP POLICY IF EXISTS "aluno_series_vinculos_treinador_crud" ON aluno_series_vinculos;
+CREATE POLICY "aluno_series_vinculos_treinador_crud" ON aluno_series_vinculos
+FOR ALL USING (treinador_id = auth.uid() OR auth_user_tipo() = 'admin')
+WITH CHECK (treinador_id = auth.uid() OR auth_user_tipo() = 'admin');
+
+DROP POLICY IF EXISTS "aluno_series_vinculos_agente_select" ON aluno_series_vinculos;
+CREATE POLICY "aluno_series_vinculos_agente_select" ON aluno_series_vinculos
+FOR SELECT USING (agente_id = auth.uid());
+
+-- ALUNO_SERIES_VINCULO_EXERCICIOS
+DROP POLICY IF EXISTS "aluno_series_vinculo_exercicios_treinador_crud" ON aluno_series_vinculo_exercicios;
+CREATE POLICY "aluno_series_vinculo_exercicios_treinador_crud" ON aluno_series_vinculo_exercicios
+FOR ALL USING (
+	aluno_serie_vinculo_id IN (
+		SELECT id FROM aluno_series_vinculos
+		WHERE treinador_id = auth.uid() OR auth_user_tipo() = 'admin'
+	)
+)
+WITH CHECK (
+	aluno_serie_vinculo_id IN (
+		SELECT id FROM aluno_series_vinculos
+		WHERE treinador_id = auth.uid() OR auth_user_tipo() = 'admin'
+	)
+);
+
+DROP POLICY IF EXISTS "aluno_series_vinculo_exercicios_agente_select" ON aluno_series_vinculo_exercicios;
+CREATE POLICY "aluno_series_vinculo_exercicios_agente_select" ON aluno_series_vinculo_exercicios
+FOR SELECT USING (
+	aluno_serie_vinculo_id IN (
+		SELECT id FROM aluno_series_vinculos
+		WHERE agente_id = auth.uid()
+	)
+);
+
+-- TREINO_EXECUCOES
+DROP POLICY IF EXISTS "treino_execucoes_treinador_select" ON treino_execucoes;
+CREATE POLICY "treino_execucoes_treinador_select" ON treino_execucoes
+FOR SELECT USING (treinador_id = auth.uid() OR auth_user_tipo() = 'admin');
+
+DROP POLICY IF EXISTS "treino_execucoes_agente_crud" ON treino_execucoes;
+CREATE POLICY "treino_execucoes_agente_crud" ON treino_execucoes
+FOR ALL USING (agente_id = auth.uid())
+WITH CHECK (agente_id = auth.uid());
+
+-- TREINO_EXECUCAO_ITENS
+DROP POLICY IF EXISTS "treino_execucao_itens_agente_crud" ON treino_execucao_itens;
+CREATE POLICY "treino_execucao_itens_agente_crud" ON treino_execucao_itens
+FOR ALL USING (
+	treino_execucao_id IN (
+		SELECT id FROM treino_execucoes
+		WHERE agente_id = auth.uid()
+	)
+)
+WITH CHECK (
+	treino_execucao_id IN (
+		SELECT id FROM treino_execucoes
+		WHERE agente_id = auth.uid()
+	)
+);
+
+DROP POLICY IF EXISTS "treino_execucao_itens_treinador_select" ON treino_execucao_itens;
+CREATE POLICY "treino_execucao_itens_treinador_select" ON treino_execucao_itens
+FOR SELECT USING (
+	treino_execucao_id IN (
+		SELECT id FROM treino_execucoes
+		WHERE treinador_id = auth.uid() OR auth_user_tipo() = 'admin'
+	)
+);

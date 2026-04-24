@@ -8,14 +8,20 @@ async function getToken(): Promise<string | null> {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken();
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+
+  const headers: Record<string, string> = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string>),
+  };
+  if (!isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
 
   const res = await fetch(`${API}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
+    headers,
   });
 
   const json = await res.json();
@@ -140,6 +146,72 @@ export const api = {
         method: "PUT",
         body: JSON.stringify(body),
       }),
+
+    treinamento: {
+      templates: {
+        list: () => request("/protocolos/treinamento/templates"),
+        get: (id: string) => request(`/protocolos/treinamento/templates/${id}`),
+        create: (body: object) =>
+          request("/protocolos/treinamento/templates", {
+            method: "POST",
+            body: JSON.stringify(body),
+          }),
+        update: (id: string, body: object) =>
+          request(`/protocolos/treinamento/templates/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(body),
+          }),
+        remove: (id: string) =>
+          request(`/protocolos/treinamento/templates/${id}`, {
+            method: "DELETE",
+          }),
+      },
+      vinculos: {
+        listByAluno: (agente_id: string) =>
+          request(`/protocolos/treinamento/alunos/${agente_id}/vinculos`),
+        create: (agente_id: string, body: object) =>
+          request(`/protocolos/treinamento/alunos/${agente_id}/vinculos`, {
+            method: "POST",
+            body: JSON.stringify(body),
+          }),
+        update: (id: string, body: object) =>
+          request(`/protocolos/treinamento/vinculos/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(body),
+          }),
+        remove: (id: string) =>
+          request(`/protocolos/treinamento/vinculos/${id}`, {
+            method: "DELETE",
+          }),
+      },
+      aluno: {
+        ativos: () => request("/protocolos/treinamento/me/ativos"),
+        iniciarExecucao: (aluno_serie_vinculo_id: string) =>
+          request("/protocolos/treinamento/execucoes/start", {
+            method: "POST",
+            body: JSON.stringify({ aluno_serie_vinculo_id }),
+          }),
+        atualizarItem: (execucaoId: string, itemId: string, body: object) =>
+          request(
+            `/protocolos/treinamento/execucoes/${execucaoId}/itens/${itemId}`,
+            {
+              method: "PUT",
+              body: JSON.stringify(body),
+            },
+          ),
+        finalizarExecucao: (execucaoId: string) =>
+          request(`/protocolos/treinamento/execucoes/${execucaoId}/finalizar`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          }),
+      },
+      trainer: {
+        resultadosAluno: (agente_id: string) =>
+          request(`/protocolos/treinamento/aluno/${agente_id}/resultados`),
+        alertasVencimento: () =>
+          request("/protocolos/treinamento/alertas-vencimento"),
+      },
+    },
   },
 
   exercicios: {
@@ -161,6 +233,30 @@ export const api = {
     },
     grupos: () => request("/exercicios/grupos"),
     get: (id: string) => request(`/exercicios/${id}`),
+    create: (body: object) =>
+      request("/exercicios", { method: "POST", body: JSON.stringify(body) }),
+    update: (id: string, body: object) =>
+      request(`/exercicios/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    remove: (id: string) => request(`/exercicios/${id}`, { method: "DELETE" }),
+    uploadMedia: (id: string, file: File, tipo: "video" | "imagem") => {
+      const form = new FormData();
+      form.append("file", file);
+      return request(`/exercicios/${id}/media?tipo=${tipo}`, {
+        method: "POST",
+        body: form,
+      });
+    },
+    importCsv: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request("/exercicios/import-csv", {
+        method: "POST",
+        body: form,
+      });
+    },
   },
 
   dashboard: {

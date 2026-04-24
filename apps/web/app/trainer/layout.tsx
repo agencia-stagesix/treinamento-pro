@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { LayoutDashboard, Bell, LogOut, Settings } from "lucide-react";
-import { clearTokens, getStoredUser } from "@/lib/api";
+import { api, clearTokens, getStoredUser } from "@/lib/api";
 
 export default function TrainerLayout({
   children,
@@ -26,6 +26,11 @@ export default function TrainerLayout({
       return;
     }
     setUser(stored);
+
+    api.dashboard
+      .alertas({ apenasNaoLidos: true })
+      .then((r: any) => setAlertCount((r.data ?? []).length))
+      .catch(() => setAlertCount(0));
   }, [router]);
 
   function logout() {

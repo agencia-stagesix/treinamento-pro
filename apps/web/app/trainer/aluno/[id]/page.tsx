@@ -26,10 +26,13 @@ export default function AlunoDetailPage() {
     api.dashboard
       .aluno(id as string)
       .then((r: any) => {
+        const d = r.data ?? {};
         setData({
-          biometria: r.data?.biometria ?? [],
-          volume: r.data?.volume ?? [],
-          readiness: r.data?.readiness ?? [],
+          ...d,
+          biometria: d.biometria ?? [],
+          volume: d.volume ?? d.treinos ?? [],
+          readiness: d.readiness ?? [],
+          treino_execucoes: d.treino_execucoes ?? [],
         });
       })
       .finally(() => setLoading(false));
@@ -70,7 +73,7 @@ export default function AlunoDetailPage() {
           href={`/trainer/protocolo/${id}`}
           className="ml-auto btn-ghost flex items-center gap-1.5 text-sm"
         >
-          <Edit3 className="w-3.5 h-3.5" /> Protocolo
+          <Edit3 className="w-3.5 h-3.5" /> Treinamento
         </Link>
       </div>
 
@@ -234,6 +237,75 @@ export default function AlunoDetailPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {data.treino_execucoes?.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <p className="text-sm font-semibold text-text">
+                  Resultados de Execução do Treinamento
+                </p>
+              </div>
+              <div className="divide-y divide-border">
+                {data.treino_execucoes.map((exec: any) => {
+                  const itens = exec.itens ?? [];
+                  const concluidos = itens.filter(
+                    (i: any) => i.concluido_em,
+                  ).length;
+                  const esforcoMedio =
+                    itens
+                      .filter((i: any) => i.esforco_percebido)
+                      .reduce(
+                        (acc: number, i: any) =>
+                          acc + Number(i.esforco_percebido),
+                        0,
+                      ) /
+                    Math.max(
+                      itens.filter((i: any) => i.esforco_percebido).length,
+                      1,
+                    );
+                  return (
+                    <div key={exec.id} className="p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-text">
+                          {exec.vinculo?.serie_template_id
+                            ? "Série vinculada"
+                            : "Treino"}
+                        </p>
+                        <p className="text-xs text-dim">
+                          {new Date(exec.iniciado_em).toLocaleString("pt-BR")}
+                        </p>
+                      </div>
+                      <p className="text-xs text-dim mt-1">
+                        {concluidos}/{itens.length} exercícios concluídos ·
+                        esforço médio{" "}
+                        {Number.isFinite(esforcoMedio)
+                          ? esforcoMedio.toFixed(1)
+                          : "-"}
+                      </p>
+                      <div className="mt-2 grid grid-cols-1 gap-2">
+                        {itens.slice(0, 4).map((item: any) => (
+                          <div
+                            key={item.id}
+                            className="text-xs rounded-lg bg-border/40 px-2 py-1.5 flex items-center justify-between"
+                          >
+                            <span className="text-text">
+                              {item.exercicio?.nome}
+                            </span>
+                            <span className="text-dim">
+                              {item.repeticoes_realizadas ??
+                                item.repeticoes_planejadas}{" "}
+                              reps · {item.carga_kg ?? "-"}kg · RPE{" "}
+                              {item.esforco_percebido ?? "-"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

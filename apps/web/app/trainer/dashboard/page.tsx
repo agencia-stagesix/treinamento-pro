@@ -2,20 +2,21 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { Activity, Droplets, Dumbbell, Utensils, Bell } from "lucide-react";
+import { Activity, Droplets, Dumbbell, Utensils } from "lucide-react";
 
 interface AlunoStatus {
-  agente_id: string;
-  nome: string;
-  email: string;
-  foto_url?: string;
+  agente: { id: string; nome: string; foto_url?: string };
+  ultimo_peso?: number;
   treinou_hoje: boolean;
-  refeicao_hoje: boolean;
-  hidratacao_percentual: number;
-  readiness_score: number | null;
-  alertas_criticos: number;
-  alertas_avisos: number;
-  ultimo_treino_dias: number | null;
+  registrou_refeicao_hoje: boolean;
+  hidratacao_hoje_ml: number;
+  hidratacao_meta_ml: number;
+  readiness_hoje: number | null;
+  dias_sem_registro: number;
+  alertas_ativos: Array<{
+    id: string;
+    severidade: "info" | "warning" | "critical";
+  }>;
 }
 
 export default function TrainerDashboardPage() {
@@ -34,13 +35,15 @@ export default function TrainerDashboardPage() {
   }, [load]);
 
   const filtered = alunos.filter((a) => {
-    if (filter === "critical") return a.alertas_criticos > 0;
-    if (filter === "inactive")
-      return a.ultimo_treino_dias !== null && a.ultimo_treino_dias > 3;
+    if (filter === "critical")
+      return a.alertas_ativos.some((x) => x.severidade === "critical");
+    if (filter === "inactive") return a.dias_sem_registro > 3;
     return true;
   });
 
-  const criticalCount = alunos.filter((a) => a.alertas_criticos > 0).length;
+  const criticalCount = alunos.filter((a) =>
+    a.alertas_ativos.some((x) => x.severidade === "critical"),
+  ).length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -85,7 +88,7 @@ export default function TrainerDashboardPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((aluno) => (
-            <AlunoCard key={aluno.agente_id} aluno={aluno} />
+            <AlunoCard key={aluno.agente.id} aluno={aluno} />
           ))}
         </div>
       )}
@@ -94,48 +97,57 @@ export default function TrainerDashboardPage() {
 }
 
 function AlunoCard({ aluno }: { aluno: AlunoStatus }) {
-  const hasCritical = aluno.alertas_criticos > 0;
-  const isInactive =
-    aluno.ultimo_treino_dias !== null && aluno.ultimo_treino_dias > 3;
+  const alertasCriticos = aluno.alertas_ativos.filter(
+    (x) => x.severidade === "critical",
+  ).length;
+  const alertasAviso = aluno.alertas_ativos.filter(
+    (x) => x.severidade === "warning",
+  ).length;
+  const hasCritical = alertasCriticos > 0;
+  const isInactive = aluno.dias_sem_registro > 3;
   const borderColor = hasCritical
     ? "border-red/40"
     : isInactive
       ? "border-dim3/60"
       : "border-border";
 
-  const readinessColor = !aluno.readiness_score
+  const readinessColor = !aluno.readiness_hoje
     ? "text-dim"
-    : aluno.readiness_score >= 70
+    : aluno.readiness_hoje >= 70
       ? "text-green"
-      : aluno.readiness_score >= 40
+      : aluno.readiness_hoje >= 40
         ? "text-amber"
         : "text-red";
 
   return (
     <Link
-      href={`/trainer/aluno/${aluno.agente_id}`}
+      href={`/trainer/aluno/${aluno.agente.id}`}
       className={`card p-4 hover:border-cyan/30 transition-colors block ${borderColor}`}
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-cyan/10 flex items-center justify-center font-bold text-cyan">
-            {aluno.nome?.charAt(0).toUpperCase()}
+            {aluno.agente.nome?.charAt(0).toUpperCase()}
           </div>
           <div>
-            <p className="font-semibold text-text text-sm">{aluno.nome}</p>
-            <p className="text-xs text-dim">{aluno.email}</p>
+            <p className="font-semibold text-text text-sm">
+              {aluno.agente.nome}
+            </p>
+            <p className="text-xs text-dim">
+              Peso atual: {aluno.ultimo_peso ? `${aluno.ultimo_peso} kg` : "—"}
+            </p>
           </div>
         </div>
 
         <div className="flex gap-1">
           {hasCritical && (
             <span className="badge-critical text-[10px] px-1.5 py-0.5">
-              {aluno.alertas_criticos > 1 ? `${aluno.alertas_criticos}×` : ""}⚠
+              {alertasCriticos > 1 ? `${alertasCriticos}×` : ""}⚠
             </span>
           )}
-          {aluno.alertas_avisos > 0 && (
+          {alertasAviso > 0 && (
             <span className="badge-warning text-[10px] px-1.5 py-0.5">
-              {aluno.alertas_avisos}
+              {alertasAviso}
             </span>
           )}
         </div>
@@ -151,27 +163,30 @@ function AlunoCard({ aluno }: { aluno: AlunoStatus }) {
         />
         <StatusIcon
           icon={Utensils}
-          active={aluno.refeicao_hoje}
+          active={aluno.registrou_refeicao_hoje}
           label="Comeu"
           color="text-amber"
         />
         <StatusIcon
           icon={Droplets}
-          active={aluno.hidratacao_percentual >= 50}
-          label={`${aluno.hidratacao_percentual}%`}
+          active={
+            aluno.hidratacao_hoje_ml >=
+            Math.round((aluno.hidratacao_meta_ml ?? 4000) * 0.5)
+          }
+          label={`${Math.round(((aluno.hidratacao_hoje_ml ?? 0) * 100) / Math.max(aluno.hidratacao_meta_ml ?? 1, 1))}%`}
           color="text-blue"
         />
         <div className="flex items-center gap-1">
           <Activity className={`w-3.5 h-3.5 ${readinessColor}`} />
           <span className={`text-xs font-medium ${readinessColor}`}>
-            {aluno.readiness_score ?? "—"}
+            {aluno.readiness_hoje ?? "—"}
           </span>
         </div>
       </div>
 
-      {isInactive && aluno.ultimo_treino_dias !== null && (
+      {isInactive && (
         <p className="text-xs text-red/70 mt-2">
-          Sem treino há {aluno.ultimo_treino_dias} dias
+          Sem registro há {aluno.dias_sem_registro} dias
         </p>
       )}
     </Link>

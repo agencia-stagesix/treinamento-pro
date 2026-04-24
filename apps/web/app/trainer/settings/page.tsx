@@ -34,6 +34,14 @@ export default function TrainerSettingsPage() {
     foto_url: "",
     data_nascimento: "",
   });
+  const [exercicios, setExercicios] = useState<any[]>([]);
+  const [novoExercicio, setNovoExercicio] = useState({
+    nome: "",
+    grupo_muscular: "",
+    equipamento: "",
+    tags: "",
+    descricao: "",
+  });
 
   useEffect(() => {
     loadData();
@@ -53,6 +61,11 @@ export default function TrainerSettingsPage() {
       // Listar convites
       const convitesData = (await api.perfil.meusConvites()) as any;
       setConvites(convitesData.data || []);
+
+      const exerciciosData = (await api.exercicios.search({
+        limit: 200,
+      })) as any;
+      setExercicios(exerciciosData.data ?? []);
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
     } finally {
@@ -95,6 +108,47 @@ export default function TrainerSettingsPage() {
   const validConvites = convites.filter(
     (c) => !c.usado && new Date(c.expires_at) > new Date(),
   );
+
+  async function criarExercicio() {
+    if (!novoExercicio.nome || !novoExercicio.grupo_muscular) return;
+    const r = (await api.exercicios.create({
+      ...novoExercicio,
+      tags: novoExercicio.tags
+        .split(";")
+        .map((t) => t.trim())
+        .filter(Boolean),
+    })) as any;
+    setExercicios((prev) => [r.data, ...prev]);
+    setNovoExercicio({
+      nome: "",
+      grupo_muscular: "",
+      equipamento: "",
+      tags: "",
+      descricao: "",
+    });
+  }
+
+  async function removerExercicio(id: string) {
+    await api.exercicios.remove(id);
+    setExercicios((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  async function onUploadMedia(
+    id: string,
+    tipo: "video" | "imagem",
+    file?: File | null,
+  ) {
+    if (!file) return;
+    const r = (await api.exercicios.uploadMedia(id, file, tipo)) as any;
+    setExercicios((prev) => prev.map((e) => (e.id === id ? r.data : e)));
+  }
+
+  async function onImportCsv(file?: File | null) {
+    if (!file) return;
+    await api.exercicios.importCsv(file);
+    const exerciciosData = (await api.exercicios.search({ limit: 200 })) as any;
+    setExercicios(exerciciosData.data ?? []);
+  }
 
   if (loading) {
     return (
@@ -271,6 +325,116 @@ export default function TrainerSettingsPage() {
         >
           Gerar Novo Código
         </button>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="text-xl font-bold text-text mb-4">
+          Biblioteca de Exercícios
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+          <input
+            className="input"
+            placeholder="Nome"
+            value={novoExercicio.nome}
+            onChange={(e) =>
+              setNovoExercicio((p) => ({ ...p, nome: e.target.value }))
+            }
+          />
+          <input
+            className="input"
+            placeholder="Grupo muscular"
+            value={novoExercicio.grupo_muscular}
+            onChange={(e) =>
+              setNovoExercicio((p) => ({
+                ...p,
+                grupo_muscular: e.target.value,
+              }))
+            }
+          />
+          <input
+            className="input"
+            placeholder="Equipamento"
+            value={novoExercicio.equipamento}
+            onChange={(e) =>
+              setNovoExercicio((p) => ({ ...p, equipamento: e.target.value }))
+            }
+          />
+          <input
+            className="input"
+            placeholder="Tags separadas por ;"
+            value={novoExercicio.tags}
+            onChange={(e) =>
+              setNovoExercicio((p) => ({ ...p, tags: e.target.value }))
+            }
+          />
+        </div>
+        <textarea
+          className="input resize-none h-20 mb-3"
+          placeholder="Descrição"
+          value={novoExercicio.descricao}
+          onChange={(e) =>
+            setNovoExercicio((p) => ({ ...p, descricao: e.target.value }))
+          }
+        />
+
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button className="btn-primary" onClick={criarExercicio}>
+            Criar exercício
+          </button>
+          <label className="btn-secondary cursor-pointer">
+            Importar CSV
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => onImportCsv(e.target.files?.[0])}
+            />
+          </label>
+        </div>
+
+        <div className="space-y-2 max-h-[380px] overflow-auto">
+          {exercicios.map((ex) => (
+            <div key={ex.id} className="border border-border rounded-lg p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-text">{ex.nome}</p>
+                  <p className="text-xs text-dim">{ex.grupo_muscular}</p>
+                </div>
+                <button
+                  className="text-xs text-red hover:opacity-80"
+                  onClick={() => removerExercicio(ex.id)}
+                >
+                  Remover
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <label className="text-xs px-2 py-1 rounded bg-border/60 cursor-pointer">
+                  Upload vídeo
+                  <input
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(e) =>
+                      onUploadMedia(ex.id, "video", e.target.files?.[0])
+                    }
+                  />
+                </label>
+                <label className="text-xs px-2 py-1 rounded bg-border/60 cursor-pointer">
+                  Upload imagem
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) =>
+                      onUploadMedia(ex.id, "imagem", e.target.files?.[0])
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

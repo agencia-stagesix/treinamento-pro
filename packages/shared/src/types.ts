@@ -247,12 +247,91 @@ export interface Protocolo {
 export interface Exercicio {
   id: string;
   nome: string;
+  nome_normalizado?: string;
   grupo_muscular: string;
   equipamento?: string;
   tags: string[];
   descricao?: string;
   video_url?: string;
+  imagem_url?: string;
+  updated_at?: string;
   created_at: string;
+}
+
+export interface SerieTemplateExercicio {
+  id: string;
+  serie_template_id: string;
+  exercicio_id: string;
+  ordem: number;
+  repeticoes: number;
+  descanso_seg: number;
+  observacoes?: string;
+  exercicio?: Exercicio;
+}
+
+export interface SerieTemplate {
+  id: string;
+  treinador_id: string;
+  nome: string;
+  descricao?: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+  exercicios?: SerieTemplateExercicio[];
+}
+
+export interface AlunoSerieVinculoOverride {
+  id: string;
+  aluno_serie_vinculo_id: string;
+  serie_template_exercicio_id: string;
+  repeticoes_override?: number;
+  descanso_seg_override?: number;
+}
+
+export interface AlunoSerieVinculo {
+  id: string;
+  agente_id: string;
+  treinador_id: string;
+  serie_template_id: string;
+  inicio_em: string;
+  validade_em: string;
+  status: "ativo" | "pausado" | "concluido" | "expirado";
+  created_at: string;
+  updated_at: string;
+  template?: SerieTemplate;
+  template_exercicios?: SerieTemplateExercicio[];
+  overrides?: AlunoSerieVinculoOverride[];
+}
+
+export interface TreinoExecucaoItem {
+  id: string;
+  treino_execucao_id: string;
+  serie_template_exercicio_id: string;
+  exercicio_id: string;
+  ordem: number;
+  repeticoes_planejadas: number;
+  repeticoes_realizadas?: number;
+  descanso_planejado_seg: number;
+  descanso_real_seg?: number;
+  carga_kg?: number;
+  esforco_percebido?: number;
+  pulado: boolean;
+  concluido_em?: string;
+  observacoes?: string;
+  exercicio?: Exercicio;
+}
+
+export interface TreinoExecucao {
+  id: string;
+  aluno_serie_vinculo_id: string;
+  agente_id: string;
+  treinador_id: string;
+  iniciado_em: string;
+  finalizado_em?: string;
+  status: "em_andamento" | "concluida" | "abandonada";
+  created_at: string;
+  vinculo?: AlunoSerieVinculo;
+  itens?: TreinoExecucaoItem[];
 }
 
 // ─── Dashboard do Treinador ────────────────────────────────────────────────

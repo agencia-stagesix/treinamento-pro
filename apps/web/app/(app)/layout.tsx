@@ -8,7 +8,7 @@ import { getStoredUser } from "@/lib/api";
 const tabs = [
   { href: "/hoje", label: "Hoje", icon: LayoutDashboard },
   { href: "/evolucao", label: "Evolução", icon: TrendingUp },
-  { href: "/protocolo", label: "Protocolo", icon: ClipboardList },
+  { href: "/protocolo", label: "Treinamento", icon: ClipboardList },
   { href: "/perfil", label: "Perfil", icon: User },
 ];
 
